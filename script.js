@@ -60,7 +60,7 @@
             updateFormState();
             
             // --- Core Message Sending Function ---
-            function sendWhatsAppMessage() {
+            function sendWhatsAppMessage(isScheduled = false) {
                 const section = sectionInput.value;
                 const date = dateInput.value;
                 const session = sessionSelect.value;
@@ -88,7 +88,29 @@
 
                 const encodedMessage = encodeURIComponent(message);
                 const whatsappUrl = `whatsapp://send?text=${encodedMessage}`;
-                window.open(whatsappUrl, '_blank');
+                
+                if (isScheduled) {
+                    // For scheduled sends, copy to clipboard and show instructions
+                    navigator.clipboard.writeText(message).then(() => {
+                        showScheduledSendNotification(whatsappUrl);
+                    }).catch(err => {
+                        console.error('Clipboard copy failed:', err);
+                        // Fallback: show the message in an alert
+                        alert(`Message copied (fallback):\n\n${message}\n\nPlease paste this in WhatsApp manually.`);
+                    });
+                } else {
+                    // For manual sends, try to open directly
+                    const opened = window.open(whatsappUrl, '_blank');
+                    if (!opened) {
+                        // If popup was blocked, copy to clipboard as fallback
+                        navigator.clipboard.writeText(message).then(() => {
+                            alert('Popup was blocked by browser. Message copied to clipboard!\n\nPlease open WhatsApp and paste the message manually.');
+                        }).catch(err => {
+                            console.error('Clipboard copy failed:', err);
+                            alert(`Popup blocked and clipboard failed. Here's your message:\n\n${message}`);
+                        });
+                    }
+                }
                 return true;
             }
 
@@ -196,7 +218,7 @@
                 const delay = targetTime - now;
                 
                 scheduledTimeoutId = setTimeout(() => {
-                    sendWhatsAppMessage();
+                    sendWhatsAppMessage(true); // Pass true to indicate this is a scheduled send
                     clearSchedule();
                 }, delay);
 
@@ -204,29 +226,27 @@
                 scheduleSendBtn.classList.replace('bg-green-600', 'bg-red-600');
                 scheduleSendBtn.classList.replace('hover:bg-green-700', 'hover:bg-red-700');
 
-                const updateCountdown = () => {
-                    const remaining = targetTime - new Date();
-                    if (remaining <= 0) {
-                        clearInterval(countdownIntervalId);
-                        statusDiv.innerHTML = 'Sending now...';
-                        return;
-                    }
-                    const totalSeconds = Math.floor(remaining / 1000);
-                    const days = Math.floor(totalSeconds / 86400);
-                    const hours = Math.floor((totalSeconds % 86400) / 3600);
-                    const mins = Math.floor((totalSeconds % 3600) / 60);
-                    const secs = totalSeconds % 60;
+                    const updateCountdown = () => {
+                        const remaining = targetTime - new Date();
+                        if (remaining <= 0) {
+                            clearInterval(countdownIntervalId);
+                            statusDiv.innerHTML = '🚀 Preparing message... Check for notification!';
+                            return;
+                        }
+                        const totalSeconds = Math.floor(remaining / 1000);
+                        const days = Math.floor(totalSeconds / 86400);
+                        const hours = Math.floor((totalSeconds % 86400) / 3600);
+                        const mins = Math.floor((totalSeconds % 3600) / 60);
+                        const secs = totalSeconds % 60;
 
-                    let countdownText = 'Sending in ';
-                    if (days > 0) countdownText += `${days}d `;
-                    if (hours > 0 || days > 0) countdownText += `${hours}h `;
-                    countdownText += `${mins}m ${secs}s`;
+                        let countdownText = 'Sending in ';
+                        if (days > 0) countdownText += `${days}d `;
+                        if (hours > 0 || days > 0) countdownText += `${hours}h `;
+                        countdownText += `${mins}m ${secs}s`;
 
-                    const scheduledDay = targetTime.toDateString() === new Date().toDateString() ? 'today' : 'tomorrow';
-                    statusDiv.innerHTML = `Scheduled for <b>${sendTime} ${scheduledDay}</b>.<br>${countdownText}`;
-                };
-                
-                updateCountdown();
+                        const scheduledDay = targetTime.toDateString() === new Date().toDateString() ? 'today' : 'tomorrow';
+                        statusDiv.innerHTML = `⏰ Scheduled for <b>${sendTime} ${scheduledDay}</b>.<br>🚀 ${countdownText}`;
+                    };                updateCountdown();
                 countdownIntervalId = setInterval(updateCountdown, 1000);
             });
             
@@ -330,6 +350,52 @@
                 setTimeout(() => {
                     toastNotification.classList.add('opacity-0', 'translate-y-10');
                 }, 2500);
+            }
+
+            function showScheduledSendNotification(whatsappUrl) {
+                // Create a custom notification for scheduled sends
+                const notification = document.createElement('div');
+                notification.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                notification.innerHTML = `
+                    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 m-4 max-w-md shadow-2xl">
+                        <div class="text-center">
+                            <div class="w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg class="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-lg font-semibold text-slate-800 dark:text-white mb-2">Message Ready!</h3>
+                            <p class="text-slate-600 dark:text-slate-400 mb-4">Your attendance report has been copied to clipboard.</p>
+                            <div class="space-y-3">
+                                <button id="openWhatsApp" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors">
+                                    Open WhatsApp & Send
+                                </button>
+                                <button id="closeNotification" class="w-full bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors">
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(notification);
+                
+                // Add event listeners
+                notification.querySelector('#openWhatsApp').addEventListener('click', () => {
+                    window.open(whatsappUrl, '_blank');
+                    document.body.removeChild(notification);
+                });
+                
+                notification.querySelector('#closeNotification').addEventListener('click', () => {
+                    document.body.removeChild(notification);
+                });
+                
+                // Close on backdrop click
+                notification.addEventListener('click', (e) => {
+                    if (e.target === notification) {
+                        document.body.removeChild(notification);
+                    }
+                });
             }
 
             aiActionBtn.addEventListener('click', () => {
